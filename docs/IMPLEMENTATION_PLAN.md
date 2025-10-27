@@ -23,7 +23,7 @@
 
 ## 3) Технологический стек
 - Telegram Bot: aiogram 3.x (FSM, inline‑кнопки, middlewares).
-- NLP/LLM: OpenAI API или локальная модель (через совместимый OpenAI‑совместимый API).
+- NLP/LLM: бесплатная локальная модель phi-3-mini-4k-instruct (через Ollama или Hugging Face Transformers). Опционально — любой OpenAI‑совместимый бэкенд.
 - Хранилище: SQLite (через `sqlite3`/`aiosqlite`), JSON‑кэш при необходимости.
 - Конфигурация: `python-dotenv` (.env).
 - Экспорт: стандартные I/O операции для .txt и .csv.
@@ -33,7 +33,7 @@
 - handlers/ — обработчики команд/кнопок, сценарная логика, FSM состояния.
 - services/
   - generation_service.py — оркестрация генерации (сбор промпта, вызов LLM, пост‑обработка).
-  - openai_client.py — низкоуровневый клиент к OpenAI/совместимому API.
+  - llm_client.py — низкоуровневый клиент к phi‑3 (через Ollama или Transformers) с единым интерфейсом.
   - export_service.py — формирование текстов, .txt и .csv.
 - repositories/ (или storage/)
   - sqlite_repo.py — пользователи, сессии, генерации (CRUD с асинхронностью).
@@ -45,7 +45,7 @@
   - validators.py — базовая валидация данных, ограничений длины и т. п.
   - text.py — общие текстовые хелперы (обрезка по лимиту, slug и т. п.).
 
-Диаграмма на словах: Telegram ⟷ aiogram.handlers → services.generation_service → services.openai_client → LLM → services.export_service → aiogram → Пользователь. Данные связываются через repositories.sqlite_repo.
+Диаграмма на словах: Telegram ⟷ aiogram.handlers → services.generation_service → services.llm_client → phi‑3 → services.export_service → aiogram → Пользователь. Данные связываются через repositories.sqlite_repo.
 
 ## 5) Логика диалога (FSM)
 Сценарий (минимум шагов, удобно пальцами):
@@ -95,13 +95,15 @@ MARKETPLACE_PROFILES = {
 ```
 Примечание: конкретные лимиты зависят от реальных правил платформ. В MVP — как «мягкие» цели и подсказки; жёсткая валидация — опционально.
 
-## 7) Стратегия промптинга
-Формат сообщений к LLM (Chat Completions):
-- system: роли, язык ответа, запреты (без спама, без ложных обещаний, без запрещённого контента).
-- user: вход пользователя (название + характеристики) + платформа, стиль, длина.
-- assistant (optional): few‑shot пример для консистентности.
+## 7) Стратегия промптинга (phi‑3‑mini‑4k‑instruct)
+phi‑3 — инструкционная causal‑LM (не чат‑модель в строгом смысле), поэтому используем одношаговый prompt с требованием строгого JSON‑вывода.
 
-Требуемый формат ответа от модели — JSON для надёжного парсинга:
+Формат обращения к модели:
+- Инструкции: роли и ограничения (язык, стиль, длина, платформа, запреты).
+- Вход: «название + характеристики» одной строкой от пользователя.
+- Требование формата: строго один JSON‑объект без пояснений и бэктиков.
+
+Требуемый формат ответа — JSON:
 ```json
 {
   "title": "...",
@@ -111,16 +113,88 @@ MARKETPLACE_PROFILES = {
 }
 ```
 
-Пример system‑сообщения (RU):
-- Ты — ассистент по созданию карточек товаров под маркетплейсы. Пиши на {locale}. Учитывай стиль: {style}. Длина: {length}. Учитывай платформу {platform}: {style_hint}. Заголовок до ~{title_max} символов. Избегай запрещённых формулировок, спама, CAPS, излишних восклицаний. Возвращай строго JSON со свойствами: title, description, keywords[], seo_tags[]. Без префиксов и пояснений.
+Шаблон промпта (RU):
+```
+Ты — ассистент по созданию карточек товаров под маркетплейсы. Пиши на {locale}.
+Стиль: {style}. Длина: {length}. Платформа: {platform} ({style_hint}).
+Заголовок до ~{title_max} символов. Избегай запрещённых обещаний, спама, CAPS.
+Верни СТРОГО один JSON‑объект со свойствами: title, description, keywords[], seo_tags[].
+Без пояснений, без бэктиков, без префиксов. Если не уверен — сделай разумные допущения.
+
+Ввод пользователя:
+{title_and_attrs}
+```
+
+Рекомендованные параметры генерации:
+- max_new_tokens: 600–800 (для «среднего» описания)
+- temperature: 0.4–0.7
+- top_p: 0.9
+- stop: по необходимости (например, по двойному переводу строки после JSON)
 
 Пост‑обработка:
-- Валидация JSON (fallback: парсинг текста с эвристикой, затем логирование промаха).
-- Подрезка заголовка, если длина превышена.
-- Объединение/уникализация ключевых слов, нормализация разделителей.
+- Валидация и безопасный парсинг JSON; при провале — повторная попытка с напоминанием «верни только JSON».
+- Подрезка заголовка, если длина превышена профилем платформы.
+- Нормализация и уникализация keywords/seo_tags.
 
-Контроль затрат:
-- Короткие промпты, reuse system, указание максимума токенов, настройка температуры.
+Контроль ресурсов:
+- Короткие, целевые подсказки; ограничение max_new_tokens.
+
+### 7.1) Интеграция phi‑3 локально: варианты
+
+Вариант A — Ollama (простой и удобный):
+- Установка: по инструкции на сайте Ollama.
+- Загрузка модели: `ollama pull phi3:mini` (соответствие phi‑3‑mini‑4k‑instruct).
+- Тест запуска: `ollama run phi3:mini "Скажи 'ok'"`.
+- Конфиг для бота:
+  - `LLM_PROVIDER=ollama`
+  - `LLM_MODEL=phi3:mini`
+  - `LLM_BASE_URL=http://localhost:11434`
+- HTTP запрос (без стрима):
+```http
+POST /api/generate HTTP/1.1
+Host: localhost:11434
+Content-Type: application/json
+
+{
+  "model": "phi3:mini",
+  "prompt": "<сформированный промпт из раздела 7>",
+  "stream": false,
+  "options": { "temperature": 0.6, "num_predict": 800 }
+}
+```
+- Ответ: поле `response` содержит текст; далее выполняем JSON‑парсинг.
+
+Вариант B — Hugging Face Transformers (максимальный контроль):
+- Зависимости: `pip install transformers accelerate torch` (+ по возможности `bitsandbytes` для 4‑бит на GPU).
+- Модель/токенизатор: `microsoft/Phi-3-mini-4k-instruct`.
+- Псевдокод инференса:
+```python
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
+
+name = "microsoft/Phi-3-mini-4k-instruct"
+tok = AutoTokenizer.from_pretrained(name)
+model = AutoModelForCausalLM.from_pretrained(
+    name, torch_dtype=torch.float16, device_map="auto"
+)
+
+prompt = build_prompt(...)  # шаблон из раздела 7
+inputs = tok(prompt, return_tensors="pt").to(model.device)
+out = model.generate(
+    **inputs,
+    max_new_tokens=800,
+    temperature=0.6,
+    do_sample=True,
+    top_p=0.9,
+)
+text = tok.decode(out[0], skip_special_tokens=True)
+payload = safe_parse_json(text)
+```
+- Конфиг для бота: `LLM_PROVIDER=transformers`, `LLM_MODEL=microsoft/Phi-3-mini-4k-instruct`.
+
+Производительность и ресурсы:
+- CPU работает, но медленнее; лучше GPU при доступности.
+- Уменьшайте `max_new_tokens` и `temperature` для ускорения и стабильности.
 
 ## 8) Модель данных (SQLite)
 Таблицы (минимум):
@@ -174,7 +248,7 @@ project_root/
   keyboards/
     common.py
   services/
-    openai_client.py
+    llm_client.py
     generation_service.py
     export_service.py
   repositories/
@@ -192,9 +266,11 @@ project_root/
 
 ## 11) Конфигурация и переменные окружения
 - BOT_TOKEN=... (токен Telegram)
-- OPENAI_API_KEY=...
-- OPENAI_BASE_URL=... (если используется совместимый сервис)
-- OPENAI_MODEL=gpt-4o-mini (или иной актуальный)
+- LLM_PROVIDER=ollama | transformers
+- LLM_MODEL=phi3:mini (для Ollama) | microsoft/Phi-3-mini-4k-instruct (для Transformers)
+- LLM_BASE_URL=http://localhost:11434 (если provider=ollama)
+- LLM_MAX_NEW_TOKENS=800
+- LLM_TEMPERATURE=0.6
 - DB_PATH=./data/bot.db
 - LOG_LEVEL=INFO
 - RATE_LIMIT_PER_MIN=5
@@ -206,7 +282,7 @@ project_root/
 
 ## 12) Тестирование
 - Unit: генерация промпта, парсинг ответа, экспорт в .csv/.txt.
-- Интеграционные: мок OpenAI API, сквозной сценарий FSM.
+- Интеграционные: мок `llm_client` (заглушка) или локальный Ollama, сквозной сценарий FSM.
 - Ручные E2E: основные ветки диалога, отмена, ошибки сети, большой ввод.
 
 ## 13) Логирование и наблюдаемость
@@ -215,13 +291,24 @@ project_root/
 
 ## 14) Развёртывание
 - Dockerfile + docker-compose для локалки.
+- Запуск phi‑3 локально:
+  - Вариант A (Ollama, рекомендуется для простоты):
+    - Установка Ollama: см. официальный сайт.
+    - Загрузка модели: `ollama pull phi3:mini` (вариант, соответствующий phi‑3‑mini‑4k‑instruct).
+    - Тест: `ollama run phi3:mini "Скажи 'ok'"`.
+    - HTTP API: `POST /api/generate` на `http://localhost:11434` с телом `{ "model": "phi3:mini", "prompt": "...", "options": { "temperature": 0.6, "num_predict": 800 } }`.
+  - Вариант B (Transformers):
+    - `pip install transformers accelerate torch` (и по необходимости: `pip install bitsandbytes` для 4‑бит на GPU).
+    - Модель: `microsoft/Phi-3-mini-4k-instruct`.
+    - Пример (упрощённо): загрузить токенизатор/модель, сгенерировать текст по шаблону промпта, распарсить JSON.
 - Прод: любой VPS/PAAS (Render/Fly.io/Railway), переменные окружения, volume под SQLite.
 - Грейсфул‑shutdown сигналов, авто‑рестарт (systemd или supervisor, если без PAAS).
 
 ## 15) Риски и меры
-- Rate limit/стоимость LLM: троттлинг, лимит токенов, кэш недавних результатов.
-- Непарсибельный ответ: строгий JSON формат + повторная попытка с более жёстким системным промптом.
+- Rate limit/стоимость LLM: для локальной phi‑3 — контроль токенов и кэширование; для удалённых API — троттлинг.
+- Непарсибельный ответ: строгий JSON формат + повторная попытка с напоминанием «верни только JSON».
 - Правила маркетплейсов: вынести в конфиг и документировать предположения.
+- Производительность локальной модели: лимит max_new_tokens, фоновая генерация, опционально GPU/квантизация.
 
 ## 16) Дорожная карта (2–3 дня активной работы)
 День 1:
@@ -230,7 +317,7 @@ project_root/
 - Репозиторий SQLite + миграции; сохранение пользователей/сессий.
 
 День 2:
-- OpenAI клиент + generation_service, промпт JSON, пост‑обработка, парсинг.
+- LLM клиент (phi‑3‑mini‑4k‑instruct через Ollama/Transformers) + generation_service, JSON‑формат, пост‑обработка, парсинг.
 - Выбор стиля/длины, показ результата, экспорт .txt/.csv.
 - Ограничение на 5 последних генераций на пользователя.
 
