@@ -1,5 +1,7 @@
 import json
+import logging
 import re
+import asyncio
 from typing import Any, Dict, Optional
 
 from app.config import get_settings
@@ -12,6 +14,14 @@ SYSTEM_PROMPT = (
     "Always return strict, valid JSON with keys: title, short_description, bullets (array of strings). "
     "No markdown, no extra text besides JSON."
 )
+
+REPAIR_SYSTEM_PROMPT = (
+    "You fix and normalize outputs to strict JSON. "
+    "Return only valid JSON with keys: title, short_description, bullets (array of strings). "
+    "No commentary, no markdown."
+)
+
+logger = logging.getLogger("productcard")
 
 
 def _extract_json(text: str) -> Dict[str, Any]:
@@ -92,14 +102,48 @@ async def generate_product_card(
         length=length,
     )
 
-    raw = await client.generate(
-        prompt,
-        system=SYSTEM_PROMPT,
-        temperature=temperature,
-        max_new_tokens=max_new_tokens,
-        stop=["\n\n"],
-    )
-    payload = _extract_json(raw)
+    attempt = 0
+    last_raw = ""
+    payload: Dict[str, Any] = {}
+    while True:
+        attempt += 1
+        raw = await client.generate(
+            prompt,
+            system=SYSTEM_PROMPT,
+            temperature=temperature,
+            max_new_tokens=max_new_tokens,
+            stop=["\n\n"],
+            timeout=cfg.llm_timeout,
+        )
+        last_raw = raw
+        payload = _extract_json(raw)
+        # Validate essential structure
+        if isinstance(payload.get("title"), str) and isinstance(payload.get("short_description"), str) and isinstance(payload.get("bullets"), (list, tuple)):
+            break
+
+        if attempt > cfg.gen_max_retries:
+            logger.warning("JSON invalid after %s attempts; returning best-effort parse", attempt)
+            break
+
+        # Repair attempt: ask the model to fix into JSON
+        logger.info("Retrying generation with repair (attempt %s)", attempt)
+        repair_prompt = (
+            "Convert the following text into strict JSON with keys: title, short_description, bullets (array).\n"
+            "Only output the JSON.\n\nText:\n" + last_raw
+        )
+        await asyncio.sleep(cfg.gen_retry_delay_sec)
+        raw = await client.generate(
+            repair_prompt,
+            system=REPAIR_SYSTEM_PROMPT,
+            temperature=0.2,
+            max_new_tokens=max_new_tokens,
+            stop=["\n\n"],
+            timeout=cfg.llm_timeout,
+        )
+        payload = _extract_json(raw)
+        if isinstance(payload.get("title"), str) and isinstance(payload.get("short_description"), str) and isinstance(payload.get("bullets"), (list, tuple)):
+            break
+        await asyncio.sleep(cfg.gen_retry_delay_sec)
     # Postprocess to enforce limits just in case
     profile = get_profile(platform)
     title = str(payload.get("title", ""))[: profile.title_max].strip()
