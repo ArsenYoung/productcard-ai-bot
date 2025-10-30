@@ -5,6 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from app.config import get_settings
+from storage.sqlite_repo import init_db
 from .handlers import router
 
 
@@ -13,6 +14,9 @@ async def main():
     cfg = get_settings()
     if not cfg.telegram_bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN не задан. Укажи в .env или переменной окружения.")
+
+    # Init database
+    await init_db(cfg.db_path)
 
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
@@ -24,4 +28,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

@@ -14,6 +14,8 @@ class Settings:
     llm_model: str
     llm_temperature: float
     llm_max_new_tokens: int
+    db_path: str
+    history_limit: int
 
 
 def _float_env(name: str, default: float) -> float:
@@ -37,4 +39,6 @@ def get_settings() -> Settings:
         llm_model=os.getenv("LLM_MODEL", "phi3:mini"),
         llm_temperature=_float_env("LLM_TEMPERATURE", 0.6),
         llm_max_new_tokens=_int_env("LLM_MAX_NEW_TOKENS", 800),
+        db_path=os.getenv("DB_PATH", "./data/bot.db"),
+        history_limit=_int_env("HISTORY_LIMIT", 5),
     )

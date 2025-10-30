@@ -10,3 +10,13 @@ def platforms_keyboard() -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+
+def export_keyboard(gen_id: int) -> InlineKeyboardMarkup:
+    buttons = [
+        [
+            InlineKeyboardButton(text="Экспорт TXT", callback_data=f"export:txt:{gen_id}"),
+            InlineKeyboardButton(text="Экспорт CSV", callback_data=f"export:csv:{gen_id}"),
+        ],
+        [InlineKeyboardButton(text="Новая генерация", callback_data="new")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
