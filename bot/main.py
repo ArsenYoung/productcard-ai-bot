@@ -10,8 +10,8 @@ from .handlers import router
 
 
 async def main():
-    logging.basicConfig(level=logging.INFO)
     cfg = get_settings()
+    logging.basicConfig(level=getattr(logging, cfg.log_level.upper(), logging.INFO))
     if not cfg.telegram_bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN не задан. Укажи в .env или переменной окружения.")
 
@@ -22,6 +22,9 @@ async def main():
     dp.include_router(router)
 
     bot = Bot(token=cfg.telegram_bot_token)
+    logging.getLogger(__name__).info(
+        "Starting bot: model=%s base_url=%s db=%s", cfg.llm_model, cfg.llm_base_url, cfg.db_path
+    )
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
