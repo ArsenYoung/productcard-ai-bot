@@ -3,6 +3,7 @@ import re
 from typing import Any, Dict, Optional
 
 from app.config import get_settings
+from app.platforms import get_profile, LENGTH_HINTS, TONE_LABELS
 from .llm_client import OllamaClient
 
 
@@ -41,18 +42,26 @@ def build_product_prompt(
     audience: Optional[str] = None,
     platform: Optional[str] = None,
     tone: str = "neutral",
+    length: str = "medium",
 ) -> str:
     parts = []
+    profile = get_profile(platform)
     if platform:
         parts.append(f"Platform: {platform}")
     parts.append(f"Product name: {product_name}")
-    parts.append(f"Tone: {tone}")
+    parts.append(f"Tone: {TONE_LABELS.get(tone, tone)}")
     if audience:
         parts.append(f"Target audience: {audience}")
     if features:
         parts.append(f"Key features/specs: {features}")
+    # Derived length target (capped by platform profile limits)
+    target_desc = min(LENGTH_HINTS.get(length, 300), profile.description_max)
     parts.append(
-        "Output JSON with fields: title (<=70 chars), short_description (<=300 chars), bullets (3-6 items)."
+        "Output strict JSON with fields: title, short_description, bullets (array)."
+    )
+    parts.append(
+        f"Constraints: title <= {profile.title_max} chars; short_description <= {target_desc} chars; "
+        f"bullets {profile.bullets_min}-{profile.bullets_max} items; no markdown; no extra text."
     )
     return "\n".join(parts)
 
@@ -64,6 +73,7 @@ async def generate_product_card(
     audience: Optional[str] = None,
     platform: Optional[str] = None,
     tone: str = "neutral",
+    length: str = "medium",
     temperature: Optional[float] = None,
     max_new_tokens: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -79,6 +89,7 @@ async def generate_product_card(
         audience=audience,
         platform=platform,
         tone=tone,
+        length=length,
     )
 
     raw = await client.generate(
@@ -88,5 +99,19 @@ async def generate_product_card(
         max_new_tokens=max_new_tokens,
         stop=["\n\n"],
     )
-    return _extract_json(raw)
-
+    payload = _extract_json(raw)
+    # Postprocess to enforce limits just in case
+    profile = get_profile(platform)
+    title = str(payload.get("title", ""))[: profile.title_max].strip()
+    desc = str(payload.get("short_description", ""))[: profile.description_max].strip()
+    bullets = payload.get("bullets") or []
+    if not isinstance(bullets, list):
+        bullets = []
+    bullets = [str(b).strip() for b in bullets if str(b).strip()]
+    bullets = bullets[: profile.bullets_max]
+    if len(bullets) < profile.bullets_min:
+        # best-effort: duplicate trimmed bullets to reach min length if possible
+        while bullets and len(bullets) < profile.bullets_min:
+            bullets.append(bullets[len(bullets) % len(bullets)])
+    payload.update(title=title, short_description=desc, bullets=bullets)
+    return payload

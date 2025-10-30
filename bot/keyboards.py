@@ -20,3 +20,22 @@ def export_keyboard(gen_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="Новая генерация", callback_data="new")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def tone_keyboard() -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text="Продающий", callback_data="tone:selling")],
+        [InlineKeyboardButton(text="Лаконичный", callback_data="tone:concise")],
+        [InlineKeyboardButton(text="Экспертный", callback_data="tone:expert")],
+        [InlineKeyboardButton(text="Нейтральный", callback_data="tone:neutral")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def length_keyboard() -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text="Короткое", callback_data="length:short")],
+        [InlineKeyboardButton(text="Среднее", callback_data="length:medium")],
+        [InlineKeyboardButton(text="Полное", callback_data="length:long")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)

@@ -4,7 +4,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 from .states import GenerationStates
-from .keyboards import platforms_keyboard, export_keyboard
+from .keyboards import platforms_keyboard, export_keyboard, tone_keyboard, length_keyboard
 from aiogram.types import BufferedInputFile
 from services.generation_service import generate_product_card
 from storage.sqlite_repo import add_generation, get_generation, prune_history
@@ -27,6 +27,28 @@ async def cmd_start(message: Message, state: FSMContext):
 async def on_platform(callback: CallbackQuery, state: FSMContext):
     platform_code = callback.data.split(":", 1)[1]
     await state.update_data(platform=platform_code)
+    await state.set_state(GenerationStates.choosing_tone)
+    await callback.message.answer(
+        "Выбери стиль текста:", reply_markup=tone_keyboard()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("tone:"))
+async def on_tone(callback: CallbackQuery, state: FSMContext):
+    tone_code = callback.data.split(":", 1)[1]
+    await state.update_data(tone=tone_code)
+    await state.set_state(GenerationStates.choosing_length)
+    await callback.message.answer(
+        "Выбери длину описания:", reply_markup=length_keyboard()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("length:"))
+async def on_length(callback: CallbackQuery, state: FSMContext):
+    length_code = callback.data.split(":", 1)[1]
+    await state.update_data(length=length_code)
     await state.set_state(GenerationStates.waiting_input)
     await callback.message.answer(
         "Введи название и характеристики одним сообщением.\n"
@@ -51,6 +73,8 @@ async def on_input(message: Message, state: FSMContext):
 
     data = await state.get_data()
     platform = data.get("platform")
+    tone = data.get("tone", "neutral")
+    length = data.get("length", "medium")
 
     wait_msg = await message.answer("Генерирую карточку… Это может занять несколько секунд.")
     try:
@@ -58,6 +82,8 @@ async def on_input(message: Message, state: FSMContext):
             product_name=product_name,
             features=features,
             platform=platform,
+            tone=tone,
+            length=length,
         )
     except Exception as e:
         await wait_msg.edit_text(
