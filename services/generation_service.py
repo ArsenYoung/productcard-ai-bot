@@ -86,7 +86,6 @@ async def generate_product_card(
         system=SYSTEM_PROMPT,
         temperature=temperature,
         max_new_tokens=max_new_tokens,
-        stop="\n\n",
+        stop=["\n\n"],
     )
     return _extract_json(raw)
-

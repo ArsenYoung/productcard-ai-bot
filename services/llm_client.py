@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence, Union
 
 import aiohttp
 
@@ -16,7 +16,7 @@ class OllamaClient:
         system: Optional[str] = None,
         temperature: float = 0.6,
         max_new_tokens: int = 800,
-        stop: Optional[str] = None,
+        stop: Optional[Union[str, Sequence[str]]] = None,
         timeout: float = 120.0,
         extra_options: Optional[Dict[str, Any]] = None,
     ) -> str:
@@ -32,7 +32,12 @@ class OllamaClient:
         if system:
             body["system"] = system
         if stop:
-            body["options"]["stop"] = stop
+            # Ollama expects stop sequences as a top-level array field
+            # e.g. { ..., "stop": ["\n\n"] }
+            if isinstance(stop, str):
+                body["stop"] = [stop]
+            else:
+                body["stop"] = list(stop)
         if extra_options:
             body["options"].update(extra_options)
 
@@ -45,4 +50,3 @@ class OllamaClient:
                     raise RuntimeError(f"Ollama HTTP {resp.status}: {text}")
                 data = await resp.json()
                 return data.get("response", "")
-
