@@ -54,3 +54,25 @@ def length_keyboard(lang: Optional[str] = None) -> InlineKeyboardMarkup:
 def cancel_keyboard(lang: Optional[str] = None) -> InlineKeyboardMarkup:
     buttons = [[InlineKeyboardButton(text=t(lang, "btn_cancel"), callback_data="cancel")]]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def actions_keyboard(gen_id: int, lang: Optional[str] = None) -> InlineKeyboardMarkup:
+    """Offer next steps after success: new or edit current request."""
+    buttons = [
+        [
+            InlineKeyboardButton(text=t(lang, "btn_new_generation"), callback_data="new"),
+            InlineKeyboardButton(text=t(lang, "btn_edit_request"), callback_data=f"edit:{gen_id}"),
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def actions_after_cancel_keyboard(lang: Optional[str] = None) -> InlineKeyboardMarkup:
+    """Offer next steps after cancel: new or edit previous request."""
+    buttons = [
+        [
+            InlineKeyboardButton(text=t(lang, "btn_new_generation"), callback_data="new"),
+            InlineKeyboardButton(text=t(lang, "btn_edit_previous"), callback_data="edit:last"),
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)

@@ -2,7 +2,7 @@ import json
 import logging
 import re
 import asyncio
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Callable, Awaitable
 
 from app.config import get_settings
 from app.platforms import get_profile, LENGTH_HINTS, TONE_LABELS
@@ -222,6 +222,7 @@ async def generate_product_card(
     language: str = "ru",
     temperature: Optional[float] = None,
     max_new_tokens: Optional[int] = None,
+    progress_cb: Optional[Callable[[float], Awaitable[None]]] = None,
 ) -> Dict[str, Any]:
     cfg = get_settings()
     client = OllamaClient(base_url=cfg.llm_base_url, model=cfg.llm_model)
@@ -261,13 +262,37 @@ async def generate_product_card(
             attempt += 1
             # Choose system prompt per target language
             sys_prompt = SYSTEM_PROMPT_RU if language == "ru" else SYSTEM_PROMPT_EN
-            raw = await client.generate(
-                prompt,
-                system=sys_prompt,
-                temperature=temperature,
-                max_new_tokens=max_new_tokens,
-                timeout=cfg.llm_timeout,
-            )
+            if progress_cb:
+                # Stream with approximate progress towards 95%
+                profile = get_profile(platform)
+                target_desc = min(LENGTH_HINTS.get(length, 300), profile.description_max)
+                expected_chars = profile.title_max + target_desc + profile.bullets_max * 25 + 64
+                generated = []
+
+                async for chunk in client.generate_stream(
+                    prompt,
+                    system=sys_prompt,
+                    temperature=temperature,
+                    max_new_tokens=max_new_tokens,
+                    timeout=cfg.llm_timeout,
+                ):
+                    generated.append(chunk)
+                    total = sum(len(c) for c in generated)
+                    # Cap at 95% until parsing completes
+                    frac = min(0.95, max(0.01, total / max(200, expected_chars)))
+                    try:
+                        await progress_cb(frac)
+                    except Exception:
+                        pass
+                raw = "".join(generated)
+            else:
+                raw = await client.generate(
+                    prompt,
+                    system=sys_prompt,
+                    temperature=temperature,
+                    max_new_tokens=max_new_tokens,
+                    timeout=cfg.llm_timeout,
+                )
             last_raw = raw
             payload = _extract_json(raw)
             # Validate structure and ensure title is not empty (fallback produces empty title)
@@ -300,13 +325,27 @@ async def generate_product_card(
             ) + last_raw
             await asyncio.sleep(cfg.gen_retry_delay_sec)
             rep_sys = REPAIR_SYSTEM_PROMPT_RU if language == "ru" else REPAIR_SYSTEM_PROMPT_EN
-            raw = await client.generate(
-                repair_prompt,
-                system=rep_sys,
-                temperature=0.2,
-                max_new_tokens=max_new_tokens,
-                timeout=cfg.llm_timeout,
-            )
+            if progress_cb:
+                # Repair without streaming; jump progress near completion
+                try:
+                    await progress_cb(0.96)
+                except Exception:
+                    pass
+                raw = await client.generate(
+                    repair_prompt,
+                    system=rep_sys,
+                    temperature=0.2,
+                    max_new_tokens=max_new_tokens,
+                    timeout=cfg.llm_timeout,
+                )
+            else:
+                raw = await client.generate(
+                    repair_prompt,
+                    system=rep_sys,
+                    temperature=0.2,
+                    max_new_tokens=max_new_tokens,
+                    timeout=cfg.llm_timeout,
+                )
             payload = _extract_json(raw)
             if (
                 isinstance(payload.get("title"), str)
@@ -348,6 +387,11 @@ async def generate_product_card(
             desc = str(product_name)[: profile.description_max].strip()
 
     payload.update(title=title, short_description=desc, bullets=bullets)
+    if progress_cb:
+        try:
+            await progress_cb(1.0)
+        except Exception:
+            pass
 
     # Store in cache
     _CACHE[key] = (now, dict(payload))

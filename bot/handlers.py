@@ -11,6 +11,8 @@ from .keyboards import (
     length_keyboard,
     language_keyboard,
     cancel_keyboard,
+    actions_keyboard,
+    actions_after_cancel_keyboard,
 )
 from .i18n import t
 from aiogram.types import BufferedInputFile
@@ -131,6 +133,25 @@ async def on_input(message: Message, state: FSMContext):
     # Start generation as a task to allow cancellation and progress updates
     import asyncio
 
+    last_percent = 0
+
+    async def _render_progress():
+        try:
+            await wait_msg.edit_text(
+                f"{t(language, 'wait_generating_short')} {last_percent}%",
+                reply_markup=cancel_keyboard(language),
+            )
+        except Exception:
+            pass
+
+    async def _progress(frac: float):
+        nonlocal last_percent
+        pct = max(0, min(100, int(round(frac * 100))))
+        if pct <= last_percent:
+            return
+        last_percent = pct
+        await _render_progress()
+
     async def _do_generate():
         return await generation_service.generate_product_card(
             product_name=product_name,
@@ -139,27 +160,25 @@ async def on_input(message: Message, state: FSMContext):
             tone=tone,
             length=length,
             language=language,
+            progress_cb=_progress,
         )
 
     task = asyncio.create_task(_do_generate())
     _running[message.from_user.id] = {"task": task, "wait_msg": wait_msg, "lang": language}
 
-    # Optional lightweight progress: animate dots every ~2s
-    async def _spinner():
-        frames = [".", "..", "...", "...."]
-        i = 0
+    # Fallback ticker: if model/streaming does not push progress, grow 1..90%
+    async def _ticker():
+        nonlocal last_percent
         try:
             while not task.done():
-                i = (i + 1) % len(frames)
-                try:
-                    await wait_msg.edit_text(t(language, "wait_generating_short") + frames[i], reply_markup=cancel_keyboard(language))
-                except Exception:
-                    pass
-                await asyncio.sleep(2.0)
+                if last_percent < 90:
+                    last_percent = min(90, max(1, last_percent + 3))
+                    await _render_progress()
+                await asyncio.sleep(1.5)
         except asyncio.CancelledError:
             pass
 
-    spin_task = asyncio.create_task(_spinner())
+    tick_task = asyncio.create_task(_ticker())
 
     try:
         payload = await task
@@ -189,7 +208,7 @@ async def on_input(message: Message, state: FSMContext):
         return
     finally:
         try:
-            spin_task.cancel()
+            tick_task.cancel()
         except Exception:
             pass
 
@@ -224,6 +243,11 @@ async def on_input(message: Message, state: FSMContext):
         t(language, "export_prompt"),
         reply_markup=export_keyboard(gen_id, language),
     )
+    # Suggest next actions (new/edit)
+    await message.answer(
+        t(language, "suggest_next"),
+        reply_markup=actions_keyboard(gen_id, language),
+    )
     _running.pop(message.from_user.id, None)
     await state.set_state(GenerationStates.waiting_input)
 
@@ -257,6 +281,41 @@ async def on_cancel(callback: CallbackQuery, state: FSMContext):
         pass
     _running.pop(callback.from_user.id, None)
     await state.set_state(GenerationStates.waiting_input)
+    # Offer next steps: new or edit last request
+    await callback.message.answer(
+        t(lang, "suggest_next"),
+        reply_markup=actions_after_cancel_keyboard(lang),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("edit:"))
+async def on_edit(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get("language", "en")
+    _, target = callback.data.split(":", 1)
+    cfg = get_settings()
+    from storage.sqlite_repo import get_generation, recent_generations
+    row = None
+    if target == "last":
+        rows = await recent_generations(cfg.db_path, tg_id=callback.from_user.id, limit=1)
+        row = rows[0] if rows else None
+    else:
+        try:
+            gen_id = int(target)
+            row = await get_generation(cfg.db_path, gen_id=gen_id)
+        except Exception:
+            row = None
+    if not row:
+        await callback.answer(t(lang, "no_previous"), show_alert=True)
+        return
+    name = row.get("product_name") or ""
+    feats = row.get("features") or ""
+    original = name if not feats else f"{name}\n{feats}"
+    await state.set_state(GenerationStates.waiting_input)
+    await callback.message.answer(
+        t(lang, "edit_send", original=original)
+    )
     await callback.answer()
 
 
