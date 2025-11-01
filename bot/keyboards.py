@@ -49,3 +49,8 @@ def length_keyboard(lang: Optional[str] = None) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=t(lang, "btn_length_long"), callback_data="length:long")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def cancel_keyboard(lang: Optional[str] = None) -> InlineKeyboardMarkup:
+    buttons = [[InlineKeyboardButton(text=t(lang, "btn_cancel"), callback_data="cancel")]]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)

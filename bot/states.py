@@ -7,3 +7,4 @@ class GenerationStates(StatesGroup):
     choosing_tone = State()
     choosing_length = State()
     waiting_input = State()
+    generating = State()

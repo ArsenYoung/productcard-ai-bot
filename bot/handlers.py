@@ -10,6 +10,7 @@ from .keyboards import (
     tone_keyboard,
     length_keyboard,
     language_keyboard,
+    cancel_keyboard,
 )
 from .i18n import t
 from aiogram.types import BufferedInputFile
@@ -21,6 +22,9 @@ from app.config import get_settings
 
 
 router = Router()
+
+# In-memory map of running tasks: tg_id -> {"task": Task, "wait_msg": Message, "lang": str}
+_running = {}
 
 
 @router.message(CommandStart())
@@ -116,9 +120,19 @@ async def on_input(message: Message, state: FSMContext):
     tone = data.get("tone", "neutral")
     length = data.get("length", "medium")
 
-    wait_msg = await message.answer(t(language, "wait_generating"))
-    try:
-        payload = await generation_service.generate_product_card(
+    # Throttle: if already generating for this user
+    if _running.get(message.from_user.id):
+        await message.answer(t(language, "busy_generating"))
+        return
+
+    await state.set_state(GenerationStates.generating)
+    wait_msg = await message.answer(t(language, "wait_generating"), reply_markup=cancel_keyboard(language))
+
+    # Start generation as a task to allow cancellation and progress updates
+    import asyncio
+
+    async def _do_generate():
+        return await generation_service.generate_product_card(
             product_name=product_name,
             features=features,
             platform=platform,
@@ -126,6 +140,37 @@ async def on_input(message: Message, state: FSMContext):
             length=length,
             language=language,
         )
+
+    task = asyncio.create_task(_do_generate())
+    _running[message.from_user.id] = {"task": task, "wait_msg": wait_msg, "lang": language}
+
+    # Optional lightweight progress: animate dots every ~2s
+    async def _spinner():
+        frames = [".", "..", "...", "...."]
+        i = 0
+        try:
+            while not task.done():
+                i = (i + 1) % len(frames)
+                try:
+                    await wait_msg.edit_text(t(language, "wait_generating_short") + frames[i], reply_markup=cancel_keyboard(language))
+                except Exception:
+                    pass
+                await asyncio.sleep(2.0)
+        except asyncio.CancelledError:
+            pass
+
+    spin_task = asyncio.create_task(_spinner())
+
+    try:
+        payload = await task
+    except asyncio.CancelledError:
+        try:
+            await wait_msg.edit_text(t(language, "cancelled"))
+        except Exception:
+            pass
+        _running.pop(message.from_user.id, None)
+        await state.set_state(GenerationStates.waiting_input)
+        return
     except Exception as e:
         # Give a more helpful hint on LLM connectivity issues
         err = str(e)
@@ -139,7 +184,14 @@ async def on_input(message: Message, state: FSMContext):
             await wait_msg.edit_text(
                 t(language, "gen_failed", error=e)
             )
+        _running.pop(message.from_user.id, None)
+        await state.set_state(GenerationStates.waiting_input)
         return
+    finally:
+        try:
+            spin_task.cancel()
+        except Exception:
+            pass
 
     # Save to DB
     cfg = get_settings()
@@ -172,6 +224,8 @@ async def on_input(message: Message, state: FSMContext):
         t(language, "export_prompt"),
         reply_markup=export_keyboard(gen_id, language),
     )
+    _running.pop(message.from_user.id, None)
+    await state.set_state(GenerationStates.waiting_input)
 
 
 @router.callback_query(F.data == "new")
@@ -183,6 +237,26 @@ async def on_new(callback: CallbackQuery, state: FSMContext):
         t(lang, "choose_marketplace"),
         reply_markup=platforms_keyboard(lang),
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "cancel")
+async def on_cancel(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get("language", "en")
+    info = _running.get(callback.from_user.id)
+    if not info:
+        await callback.answer(t(lang, "malformed_request"), show_alert=False)
+        return
+    task = info.get("task")
+    if task and not task.done():
+        task.cancel()
+    try:
+        await callback.message.edit_text(t(lang, "cancelled"))
+    except Exception:
+        pass
+    _running.pop(callback.from_user.id, None)
+    await state.set_state(GenerationStates.waiting_input)
     await callback.answer()
 
 

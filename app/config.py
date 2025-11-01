@@ -20,6 +20,8 @@ class Settings:
     gen_max_retries: int
     gen_retry_delay_sec: float
     log_level: str
+    cache_ttl_sec: float
+    cache_size: int
 
 
 def _float_env(name: str, default: float) -> float:
@@ -49,4 +51,6 @@ def get_settings() -> Settings:
         gen_max_retries=_int_env("GEN_MAX_RETRIES", 2),
         gen_retry_delay_sec=_float_env("GEN_RETRY_DELAY_SEC", 0.5),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
+        cache_ttl_sec=_float_env("CACHE_TTL_SEC", 600.0),
+        cache_size=_int_env("CACHE_SIZE", 128),
     )

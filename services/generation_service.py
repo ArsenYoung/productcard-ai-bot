@@ -2,7 +2,7 @@ import json
 import logging
 import re
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from app.config import get_settings
 from app.platforms import get_profile, LENGTH_HINTS, TONE_LABELS
@@ -35,6 +35,22 @@ REPAIR_SYSTEM_PROMPT_RU = (
 )
 
 logger = logging.getLogger("productcard")
+
+# Simple in-memory cache with TTL
+_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+_CACHE_ORDER: list[str] = []
+
+def _cache_key(**kwargs: Any) -> str:
+    # Normalize values and build a stable key
+    parts = [
+        str(kwargs.get("product_name", "")).strip().lower(),
+        str(kwargs.get("features", "")).strip().lower(),
+        str(kwargs.get("platform", "")).strip().lower(),
+        str(kwargs.get("tone", "")).strip().lower(),
+        str(kwargs.get("length", "")).strip().lower(),
+        str(kwargs.get("language", "")).strip().lower(),
+    ]
+    return "|".join(parts)
 
 
 def _extract_json(text: str) -> Dict[str, Any]:
@@ -149,9 +165,25 @@ def build_product_prompt(
             "избегай штампов вроде ‘высококачественный’, ‘лучший’, ‘современный’; "
             "никаких слов ‘пожалуйста’."
         )
-        parts.append(
-            "Буллеты: 3–6 пунктов по 2–7 слов, без точки на конце; начинай с существительного (например, ‘Тихие клики’, ‘Стабильная связь 2.4 ГГц’)."
-        )
+        # Platform-specific guidance
+        if (platform or "").lower() == "wb":
+            parts.append(
+                "Стиль WB: без эмодзи и CAPS; никаких обещаний/гарантий; избегай повторов ‘беспроводной’."
+            )
+            parts.append(
+                "Буллеты: 3–5 коротких пунктов по 2–6 слов, без точки на конце."
+            )
+        elif (platform or "").lower() == "ozon":
+            parts.append(
+                "Стиль Ozon: нейтральный, информативный; если в названии есть бренд, ставь его ближе к началу заголовка."
+            )
+            parts.append(
+                "Буллеты: 3–6 пунктов по 2–7 слов, без точки на конце."
+            )
+        else:
+            parts.append(
+                "Буллеты: 3–6 пунктов по 2–7 слов, без точки на конце; начинай с существительного (пример: ‘Тихие клики’, ‘Стабильная связь 2.4 ГГц’)."
+            )
         parts.append(
             "Выводи СТРОГО JSON с полями: title, short_description, bullets (массив строк). Без markdown."
         )
@@ -206,6 +238,20 @@ async def generate_product_card(
         length=length,
         language=language,
     )
+
+    # Cache lookup
+    key = _cache_key(
+        product_name=product_name,
+        features=features,
+        platform=platform,
+        tone=tone,
+        length=length,
+        language=language,
+    )
+    now = asyncio.get_event_loop().time()
+    hit = _CACHE.get(key)
+    if hit and (now - hit[0]) <= cfg.cache_ttl_sec:
+        return dict(hit[1])
 
     attempt = 0
     last_raw = ""
@@ -302,4 +348,12 @@ async def generate_product_card(
             desc = str(product_name)[: profile.description_max].strip()
 
     payload.update(title=title, short_description=desc, bullets=bullets)
+
+    # Store in cache
+    _CACHE[key] = (now, dict(payload))
+    _CACHE_ORDER.append(key)
+    # Enforce cache size
+    while len(_CACHE_ORDER) > cfg.cache_size:
+        oldest = _CACHE_ORDER.pop(0)
+        _CACHE.pop(oldest, None)
     return payload
