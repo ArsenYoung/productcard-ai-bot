@@ -13,7 +13,7 @@ async def main():
     cfg = get_settings()
     logging.basicConfig(level=getattr(logging, cfg.log_level.upper(), logging.INFO))
     if not cfg.telegram_bot_token:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN не задан. Укажи в .env или переменной окружения.")
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is not set. Provide it via .env or an environment variable.")
 
     # Init database
     await init_db(cfg.db_path)

@@ -1,7 +1,9 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from typing import Optional
+from .i18n import t
 
 
-def platforms_keyboard() -> InlineKeyboardMarkup:
+def platforms_keyboard(lang: Optional[str] = None) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(text="Ozon", callback_data="platform:ozon")],
         [InlineKeyboardButton(text="Wildberries", callback_data="platform:wb")],
@@ -11,31 +13,39 @@ def platforms_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def export_keyboard(gen_id: int) -> InlineKeyboardMarkup:
+def export_keyboard(gen_id: int, lang: Optional[str] = None) -> InlineKeyboardMarkup:
     buttons = [
         [
-            InlineKeyboardButton(text="Экспорт TXT", callback_data=f"export:txt:{gen_id}"),
-            InlineKeyboardButton(text="Экспорт CSV", callback_data=f"export:csv:{gen_id}"),
+            InlineKeyboardButton(text=t(lang, "btn_export_txt"), callback_data=f"export:txt:{gen_id}"),
+            InlineKeyboardButton(text=t(lang, "btn_export_csv"), callback_data=f"export:csv:{gen_id}"),
         ],
-        [InlineKeyboardButton(text="Новая генерация", callback_data="new")],
+        [InlineKeyboardButton(text=t(lang, "btn_new_generation"), callback_data="new")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def tone_keyboard() -> InlineKeyboardMarkup:
+def language_keyboard() -> InlineKeyboardMarkup:
     buttons = [
-        [InlineKeyboardButton(text="Продающий", callback_data="tone:selling")],
-        [InlineKeyboardButton(text="Лаконичный", callback_data="tone:concise")],
-        [InlineKeyboardButton(text="Экспертный", callback_data="tone:expert")],
-        [InlineKeyboardButton(text="Нейтральный", callback_data="tone:neutral")],
+        [InlineKeyboardButton(text=t("ru", "btn_lang_ru"), callback_data="lang:ru")],
+        [InlineKeyboardButton(text=t("en", "btn_lang_en"), callback_data="lang:en")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def length_keyboard() -> InlineKeyboardMarkup:
+def tone_keyboard(lang: Optional[str] = None) -> InlineKeyboardMarkup:
     buttons = [
-        [InlineKeyboardButton(text="Короткое", callback_data="length:short")],
-        [InlineKeyboardButton(text="Среднее", callback_data="length:medium")],
-        [InlineKeyboardButton(text="Полное", callback_data="length:long")],
+        [InlineKeyboardButton(text=t(lang, "btn_tone_salesy"), callback_data="tone:selling")],
+        [InlineKeyboardButton(text=t(lang, "btn_tone_concise"), callback_data="tone:concise")],
+        [InlineKeyboardButton(text=t(lang, "btn_tone_expert"), callback_data="tone:expert")],
+        [InlineKeyboardButton(text=t(lang, "btn_tone_neutral"), callback_data="tone:neutral")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def length_keyboard(lang: Optional[str] = None) -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text=t(lang, "btn_length_short"), callback_data="length:short")],
+        [InlineKeyboardButton(text=t(lang, "btn_length_medium"), callback_data="length:medium")],
+        [InlineKeyboardButton(text=t(lang, "btn_length_long"), callback_data="length:long")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)

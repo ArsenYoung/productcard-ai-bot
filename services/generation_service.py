@@ -9,40 +9,103 @@ from app.platforms import get_profile, LENGTH_HINTS, TONE_LABELS
 from .llm_client import OllamaClient
 
 
-SYSTEM_PROMPT = (
+SYSTEM_PROMPT_EN = (
     "You are an assistant that writes concise, compelling e-commerce product cards. "
     "Always return strict, valid JSON with keys: title, short_description, bullets (array of strings). "
-    "No markdown, no extra text besides JSON."
+    "No markdown, no code fences, no extra text besides JSON."
 )
 
-REPAIR_SYSTEM_PROMPT = (
-    "You fix and normalize outputs to strict JSON. "
+SYSTEM_PROMPT_RU = (
+    "Ты ассистент, который пишет краткие и убедительные карточки товара для маркетплейсов. "
+    "Пиши ТОЛЬКО на русском языке. "
+    "Возвращай СТРОГО валидный JSON со свойствами: title, short_description, bullets (массив строк). "
+    "Без markdown и без тройных кавычек/код‑блоков. Никакого лишнего текста, только JSON."
+)
+
+REPAIR_SYSTEM_PROMPT_EN = (
+    "You fix and normalize outputs to strict JSON only. "
     "Return only valid JSON with keys: title, short_description, bullets (array of strings). "
     "No commentary, no markdown."
+)
+
+REPAIR_SYSTEM_PROMPT_RU = (
+    "Преобразуй текст в СТРОГИЙ JSON. "
+    "Верни только валидный JSON со свойствами: title, short_description, bullets (массив строк). "
+    "Никаких комментариев, markdown или лишнего текста."
 )
 
 logger = logging.getLogger("productcard")
 
 
 def _extract_json(text: str) -> Dict[str, Any]:
+    """Best‑effort extraction of a JSON object from model output.
+
+    Tolerates code fences and trailing commas; if everything fails, returns
+    a fallback structure with the raw text in short_description.
+    """
+    # Direct parse attempt
     try:
         return json.loads(text)
     except Exception:
         pass
 
+    # Find the first {...} block in the text (ignores code fences around)
     m = re.search(r"\{[\s\S]*\}", text)
     if m:
         chunk = m.group(0)
+        # Try strict parse first
         try:
             return json.loads(chunk)
         except Exception:
-            pass
+            # Remove trailing commas before closing } or ] and retry
+            chunk_nc = re.sub(r",\s*([}\]])", r"\1", chunk)
+            try:
+                return json.loads(chunk_nc)
+            except Exception:
+                # Last resort: extract key fields with regex
+                try:
+                    title_m = re.search(r'"title"\s*:\s*"([^"]*)"', chunk)
+                    desc_m = re.search(r'"short_description"\s*:\s*"([^"]*)"', chunk)
+                    bullets_m = re.search(r'"bullets"\s*:\s*\[([\s\S]*?)\]', chunk)
+                    if not (title_m or desc_m or bullets_m):
+                        raise ValueError("no fields matched")
+                    result: Dict[str, Any] = {
+                        "title": title_m.group(1).strip() if title_m else "",
+                        "short_description": desc_m.group(1).strip() if desc_m else "",
+                        "bullets": [],
+                    }
+                    if bullets_m:
+                        items = re.findall(r'"([^"]+)"', bullets_m.group(1))
+                        result["bullets"] = [s.strip() for s in items if s.strip()]
+                    return result
+                except Exception:
+                    pass
 
     return {
         "title": "",
         "short_description": text.strip(),
         "bullets": [],
     }
+
+
+def _split_to_bullets(text: Optional[str]) -> list[str]:
+    if not text:
+        return []
+    # Split by common separators and trim
+    parts = re.split(r"[\n;•\-\u2022,]", str(text))
+    out = []
+    for p in parts:
+        p = p.strip().strip("•-— ")
+        if p:
+            out.append(p)
+    # Deduplicate while preserving order
+    seen = set()
+    uniq = []
+    for p in out:
+        if p not in seen:
+            seen.add(p)
+            uniq.append(p)
+    return uniq[:10]
 
 
 def build_product_prompt(
@@ -53,26 +116,66 @@ def build_product_prompt(
     platform: Optional[str] = None,
     tone: str = "neutral",
     length: str = "medium",
+    language: str = "ru",
 ) -> str:
     parts = []
     profile = get_profile(platform)
-    if platform:
-        parts.append(f"Platform: {platform}")
-    parts.append(f"Product name: {product_name}")
-    parts.append(f"Tone: {TONE_LABELS.get(tone, tone)}")
-    if audience:
-        parts.append(f"Target audience: {audience}")
-    if features:
-        parts.append(f"Key features/specs: {features}")
-    # Derived length target (capped by platform profile limits)
-    target_desc = min(LENGTH_HINTS.get(length, 300), profile.description_max)
-    parts.append(
-        "Output strict JSON with fields: title, short_description, bullets (array)."
-    )
-    parts.append(
-        f"Constraints: title <= {profile.title_max} chars; short_description <= {target_desc} chars; "
-        f"bullets {profile.bullets_min}-{profile.bullets_max} items; no markdown; no extra text."
-    )
+
+    # Build language-specific instruction blocks to improve fidelity
+    if language == "ru":
+        tone_ru = {
+            "selling": "рекламный/убеждающий",
+            "concise": "краткий",
+            "expert": "экспертный/достоверный",
+            "neutral": "нейтральный",
+        }
+        if platform:
+            parts.append(f"Площадка: {platform}")
+        parts.append(f"Название товара: {product_name}")
+        parts.append(f"Тон: {tone_ru.get(tone, tone)}")
+        if audience:
+            parts.append(f"Целевая аудитория: {audience}")
+        if features:
+            parts.append(f"Характеристики: {features}")
+        target_desc = min(LENGTH_HINTS.get(length, 300), profile.description_max)
+        parts.append("Задача: написать заголовок и краткое описание на русском.")
+        parts.append(
+            "Строго следуй входным данным, не выдумывай характеристики. "
+            "Не упоминай Wi‑Fi/Bluetooth и др., если это явно не указано."
+        )
+        parts.append(
+            "Стиль: естественные русские формулировки без кальки и жаргона; "
+            "опиши 1–2 короткими предложениями (16–30 слов каждое); "
+            "избегай штампов вроде ‘высококачественный’, ‘лучший’, ‘современный’; "
+            "никаких слов ‘пожалуйста’."
+        )
+        parts.append(
+            "Буллеты: 3–6 пунктов по 2–7 слов, без точки на конце; начинай с существительного (например, ‘Тихие клики’, ‘Стабильная связь 2.4 ГГц’)."
+        )
+        parts.append(
+            "Выводи СТРОГО JSON с полями: title, short_description, bullets (массив строк). Без markdown."
+        )
+        parts.append(
+            f"Ограничения: title ≤ {profile.title_max} символов; short_description ≤ {target_desc} символов; "
+            f"bullets {profile.bullets_min}-{profile.bullets_max} пунктов."
+        )
+    else:
+        if platform:
+            parts.append(f"Platform: {platform}")
+        parts.append(f"Product name: {product_name}")
+        parts.append(f"Tone: {TONE_LABELS.get(tone, tone)}")
+        if audience:
+            parts.append(f"Target audience: {audience}")
+        if features:
+            parts.append(f"Key features/specs: {features}")
+        target_desc = min(LENGTH_HINTS.get(length, 300), profile.description_max)
+        parts.append("Task: write a concise, convincing product title and short description.")
+        parts.append("Use only provided facts; do not invent specs.")
+        parts.append("Output STRICT JSON: title, short_description, bullets (array). No markdown.")
+        parts.append(
+            f"Constraints: title <= {profile.title_max} chars; short_description <= {target_desc} chars; "
+            f"bullets {profile.bullets_min}-{profile.bullets_max} items."
+        )
     return "\n".join(parts)
 
 
@@ -84,6 +187,7 @@ async def generate_product_card(
     platform: Optional[str] = None,
     tone: str = "neutral",
     length: str = "medium",
+    language: str = "ru",
     temperature: Optional[float] = None,
     max_new_tokens: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -100,50 +204,74 @@ async def generate_product_card(
         platform=platform,
         tone=tone,
         length=length,
+        language=language,
     )
 
     attempt = 0
     last_raw = ""
     payload: Dict[str, Any] = {}
-    while True:
-        attempt += 1
-        raw = await client.generate(
-            prompt,
-            system=SYSTEM_PROMPT,
-            temperature=temperature,
-            max_new_tokens=max_new_tokens,
-            stop=["\n\n"],
-            timeout=cfg.llm_timeout,
-        )
-        last_raw = raw
-        payload = _extract_json(raw)
-        # Validate essential structure
-        if isinstance(payload.get("title"), str) and isinstance(payload.get("short_description"), str) and isinstance(payload.get("bullets"), (list, tuple)):
-            break
+    try:
+        while True:
+            attempt += 1
+            # Choose system prompt per target language
+            sys_prompt = SYSTEM_PROMPT_RU if language == "ru" else SYSTEM_PROMPT_EN
+            raw = await client.generate(
+                prompt,
+                system=sys_prompt,
+                temperature=temperature,
+                max_new_tokens=max_new_tokens,
+                timeout=cfg.llm_timeout,
+            )
+            last_raw = raw
+            payload = _extract_json(raw)
+            # Validate structure and ensure title is not empty (fallback produces empty title)
+            if (
+                isinstance(payload.get("title"), str)
+                and payload.get("title", "").strip()
+                and isinstance(payload.get("short_description"), str)
+                and isinstance(payload.get("bullets"), (list, tuple))
+            ):
+                break
 
-        if attempt > cfg.gen_max_retries:
-            logger.warning("JSON invalid after %s attempts; returning best-effort parse", attempt)
-            break
+            if attempt > cfg.gen_max_retries:
+                logger.warning(
+                    "JSON invalid after %s attempts; returning best-effort parse", attempt
+                )
+                break
 
-        # Repair attempt: ask the model to fix into JSON
-        logger.info("Retrying generation with repair (attempt %s)", attempt)
-        repair_prompt = (
-            "Convert the following text into strict JSON with keys: title, short_description, bullets (array).\n"
-            "Only output the JSON.\n\nText:\n" + last_raw
-        )
-        await asyncio.sleep(cfg.gen_retry_delay_sec)
-        raw = await client.generate(
-            repair_prompt,
-            system=REPAIR_SYSTEM_PROMPT,
-            temperature=0.2,
-            max_new_tokens=max_new_tokens,
-            stop=["\n\n"],
-            timeout=cfg.llm_timeout,
-        )
-        payload = _extract_json(raw)
-        if isinstance(payload.get("title"), str) and isinstance(payload.get("short_description"), str) and isinstance(payload.get("bullets"), (list, tuple)):
-            break
-        await asyncio.sleep(cfg.gen_retry_delay_sec)
+            # Repair attempt: ask the model to fix into JSON
+            logger.info("Retrying generation with repair (attempt %s)", attempt)
+            repair_prompt = (
+                (
+                    "Преобразуй текст ниже в СТРОГИЙ JSON с ключами: title, short_description, bullets (массив).\n"
+                    "Выведи только JSON, без пояснений.\n\nТекст:\n"
+                )
+                if language == "ru"
+                else (
+                    "Convert the text below into STRICT JSON with keys: title, short_description, bullets (array).\n"
+                    "Output only the JSON, no comments.\n\nText:\n"
+                )
+            ) + last_raw
+            await asyncio.sleep(cfg.gen_retry_delay_sec)
+            rep_sys = REPAIR_SYSTEM_PROMPT_RU if language == "ru" else REPAIR_SYSTEM_PROMPT_EN
+            raw = await client.generate(
+                repair_prompt,
+                system=rep_sys,
+                temperature=0.2,
+                max_new_tokens=max_new_tokens,
+                timeout=cfg.llm_timeout,
+            )
+            payload = _extract_json(raw)
+            if (
+                isinstance(payload.get("title"), str)
+                and isinstance(payload.get("short_description"), str)
+                and isinstance(payload.get("bullets"), (list, tuple))
+            ):
+                break
+            await asyncio.sleep(cfg.gen_retry_delay_sec)
+    except Exception as e:
+        logger.exception("LLM generation failed; falling back to heuristic output: %s", e)
+        payload = {}
     # Postprocess to enforce limits just in case
     profile = get_profile(platform)
     title = str(payload.get("title", ""))[: profile.title_max].strip()
@@ -157,5 +285,21 @@ async def generate_product_card(
         # best-effort: duplicate trimmed bullets to reach min length if possible
         while bullets and len(bullets) < profile.bullets_min:
             bullets.append(bullets[len(bullets) % len(bullets)])
+    # Fallbacks for missing fields
+    if not title and product_name:
+        title = str(product_name)[: profile.title_max].strip()
+    if not desc:
+        if bullets:
+            # Compose a compact sentence from bullets
+            desc = "; ".join(bullets)[: profile.description_max].strip()
+        elif features:
+            # Build bullets from features and also use them to craft a sentence
+            feature_bullets = _split_to_bullets(features)
+            if not bullets:
+                bullets = feature_bullets[: profile.bullets_max]
+            desc = ", ".join(feature_bullets)[: profile.description_max].strip()
+        elif product_name:
+            desc = str(product_name)[: profile.description_max].strip()
+
     payload.update(title=title, short_description=desc, bullets=bullets)
     return payload
