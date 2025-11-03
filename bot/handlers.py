@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
@@ -13,6 +13,7 @@ from .keyboards import (
     cancel_keyboard,
     actions_keyboard,
     actions_after_cancel_keyboard,
+    category_keyboard,
 )
 from .i18n import t
 from aiogram.types import BufferedInputFile
@@ -27,6 +28,15 @@ router = Router()
 
 # In-memory map of running tasks: tg_id -> {"task": Task, "wait_msg": Message, "lang": str}
 _running = {}
+
+
+def _is_admin(user_id: int) -> bool:
+    cfg = get_settings()
+    admin_ids = getattr(cfg, "admin_ids", tuple())
+    try:
+        return int(user_id) in set(admin_ids)
+    except Exception:
+        return False
 
 
 @router.message(CommandStart())
@@ -59,6 +69,173 @@ async def on_platform(callback: CallbackQuery, state: FSMContext):
             t(lang, "choose_tone"), reply_markup=tone_keyboard(lang)
         )
     await callback.answer()
+
+
+# ----- Preset/category selection -----
+
+@router.message(Command("preset"))
+async def cmd_preset(message: Message, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get("language", "en")
+    await message.answer(
+        t(lang, "choose_category"), reply_markup=category_keyboard(lang)
+    )
+
+
+@router.callback_query(F.data.startswith("cat:"))
+async def on_category(callback: CallbackQuery, state: FSMContext):
+    code = callback.data.split(":", 1)[1]
+    data = await state.get_data()
+    lang = data.get("language", "en")
+    from app.presets import get_preset
+
+    if not code:
+        await state.update_data(category=None)
+        await callback.message.answer(t(lang, "preset_cleared"))
+        await callback.answer()
+        return
+
+    preset = get_preset(code)
+    if not preset:
+        await callback.answer(t(lang, "malformed_request"), show_alert=True)
+        return
+    await state.update_data(category=preset.code)
+    name = preset.name_ru if lang == "ru" else preset.name_en
+    await callback.message.answer(t(lang, "preset_applied", name=name))
+    await callback.answer()
+
+
+# ----- Admin commands -----
+
+@router.message(Command("limits"))
+async def cmd_limits(message: Message, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get("language", "en")
+    if not _is_admin(message.from_user.id):
+        await message.answer(t(lang, "admin_only"))
+        return
+    cfg = get_settings()
+    lines = [t(lang, "limits_header")]
+    lines.append(f"model={cfg.llm_model} base_url={cfg.llm_base_url}")
+    lines.append(
+        f"timeout={cfg.llm_timeout}s retries={cfg.gen_max_retries} cache_ttl={cfg.cache_ttl_sec}s cache_size={cfg.cache_size}"
+    )
+    lines.append(f"db={cfg.db_path} history_limit={cfg.history_limit}")
+    log_file = getattr(cfg, "log_file", None)
+    if log_file:
+        lines.append(
+            f"log_file={log_file} max_bytes={getattr(cfg,'log_max_bytes',0)} backups={getattr(cfg,'log_backup_count',0)}"
+        )
+    await message.answer("\n".join(lines))
+
+
+@router.message(Command("stats"))
+async def cmd_stats(message: Message, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get("language", "en")
+    if not _is_admin(message.from_user.id):
+        await message.answer(t(lang, "admin_only"))
+        return
+    cfg = get_settings()
+    from storage.sqlite_repo import stats_overview, per_user_counts
+    ov = await stats_overview(cfg.db_path)
+    top = await per_user_counts(cfg.db_path, limit=10)
+    lines = [t(lang, "stats_header")]
+    lines.append(
+        t(
+            lang,
+            "stats_total",
+            total=ov.get("total_generations", 0),
+            users=ov.get("users", 0),
+            last=ov.get("last_generated_at", "-") or "-",
+        )
+    )
+    if top:
+        lines.append("")
+        lines.append(t(lang, "stats_top"))
+        for row in top:
+            lines.append(f"{row.get('tg_id')}: {row.get('cnt')} (last={row.get('last_at')})")
+    await message.answer("\n".join(lines))
+
+
+@router.message(Command("backup"))
+async def cmd_backup(message: Message, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get("language", "en")
+    if not _is_admin(message.from_user.id):
+        await message.answer(t(lang, "admin_only"))
+        return
+    cfg = get_settings()
+    db_path = cfg.db_path
+    import os
+    if not db_path or db_path == ":memory:" or not os.path.exists(db_path):
+        await message.answer(t(lang, "backup_missing"))
+        return
+    try:
+        with open(db_path, "rb") as f:
+            data_bytes = f.read()
+        await message.answer_document(
+            BufferedInputFile(data_bytes, filename="productcard_backup.db")
+        )
+        await message.answer(t(lang, "backup_sent"))
+    except Exception as e:
+        await message.answer(f"Backup failed: {e}")
+
+
+@router.message(Command("logs"))
+async def cmd_logs(message: Message, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get("language", "en")
+    if not _is_admin(message.from_user.id):
+        await message.answer(t(lang, "admin_only"))
+        return
+    cfg = get_settings()
+    log_file = getattr(cfg, "log_file", None)
+    import os
+    if not log_file or not os.path.exists(log_file):
+        await message.answer(t(lang, "logs_missing"))
+        return
+    try:
+        # Tail last N lines
+        N = 200
+        with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+            lines = f.readlines()[-N:]
+        content = "".join(lines).encode("utf-8", errors="ignore")
+        await message.answer_document(
+            BufferedInputFile(content, filename="logs_tail.txt")
+        )
+    except Exception as e:
+        await message.answer(f"Logs read failed: {e}")
+
+
+@router.message(Command("health"))
+async def cmd_health(message: Message, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get("language", "en")
+    if not _is_admin(message.from_user.id):
+        await message.answer(t(lang, "admin_only"))
+        return
+    # Check DB and model
+    db_ok = True
+    try:
+        from storage.sqlite_repo import init_db
+        cfg = get_settings()
+        await init_db(cfg.db_path)
+    except Exception:
+        db_ok = False
+    model_ok = False
+    try:
+        from services.llm_client import OllamaClient
+        cfg = get_settings()
+        client = OllamaClient(cfg.llm_base_url, cfg.llm_model)
+        model_ok = await client.health_check(timeout=3.0)
+    except Exception:
+        model_ok = False
+    if db_ok and model_ok:
+        await message.answer(t(lang, "health_ok"))
+    else:
+        await message.answer(t(lang, "health_warn", db=str(db_ok), model=str(model_ok)))
+
 
 
 @router.callback_query(F.data.startswith("lang:"))
@@ -102,7 +279,7 @@ async def on_length(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.message(GenerationStates.waiting_input)
+@router.message(GenerationStates.waiting_input, F.text, ~F.text.startswith("/"))
 async def on_input(message: Message, state: FSMContext):
     text = (message.text or "").strip()
     if not text:
@@ -121,6 +298,7 @@ async def on_input(message: Message, state: FSMContext):
     language = data.get("language", "ru")
     tone = data.get("tone", "neutral")
     length = data.get("length", "medium")
+    category = data.get("category")
 
     # Throttle: if already generating for this user
     if _running.get(message.from_user.id):
@@ -160,6 +338,7 @@ async def on_input(message: Message, state: FSMContext):
             tone=tone,
             length=length,
             language=language,
+            category=category,
             progress_cb=_progress,
         )
 
@@ -364,3 +543,10 @@ async def on_export(callback: CallbackQuery, state: FSMContext):
         return
 
     await callback.answer()
+
+
+@router.message(Command("whoami"))
+async def cmd_whoami(message: Message, state: FSMContext):
+    uid = message.from_user.id
+    is_admin = _is_admin(uid)
+    await message.answer(f"ID: {uid}\nAdmin: {is_admin}")

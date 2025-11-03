@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional, Tuple, Callable, Awaitable
 
 from app.config import get_settings
 from app.platforms import get_profile, LENGTH_HINTS, TONE_LABELS
+from app.presets import get_preset
 from .llm_client import OllamaClient
 
 
@@ -49,6 +50,7 @@ def _cache_key(**kwargs: Any) -> str:
         str(kwargs.get("tone", "")).strip().lower(),
         str(kwargs.get("length", "")).strip().lower(),
         str(kwargs.get("language", "")).strip().lower(),
+        str(kwargs.get("category", "")).strip().lower(),
     ]
     return "|".join(parts)
 
@@ -133,6 +135,7 @@ def build_product_prompt(
     tone: str = "neutral",
     length: str = "medium",
     language: str = "ru",
+    category: Optional[str] = None,
 ) -> str:
     parts = []
     profile = get_profile(platform)
@@ -149,6 +152,11 @@ def build_product_prompt(
             parts.append(f"Площадка: {platform}")
         parts.append(f"Название товара: {product_name}")
         parts.append(f"Тон: {tone_ru.get(tone, tone)}")
+        # Category preset guidance
+        preset = get_preset(category)
+        if preset:
+            parts.append(f"Категория: {preset.name_ru}")
+            parts.extend(preset.style_ru)
         if audience:
             parts.append(f"Целевая аудитория: {audience}")
         if features:
@@ -196,6 +204,10 @@ def build_product_prompt(
             parts.append(f"Platform: {platform}")
         parts.append(f"Product name: {product_name}")
         parts.append(f"Tone: {TONE_LABELS.get(tone, tone)}")
+        preset = get_preset(category)
+        if preset:
+            parts.append(f"Category: {preset.name_en}")
+            parts.extend(preset.style_en)
         if audience:
             parts.append(f"Target audience: {audience}")
         if features:
@@ -220,6 +232,7 @@ async def generate_product_card(
     tone: str = "neutral",
     length: str = "medium",
     language: str = "ru",
+    category: Optional[str] = None,
     temperature: Optional[float] = None,
     max_new_tokens: Optional[int] = None,
     progress_cb: Optional[Callable[[float], Awaitable[None]]] = None,
@@ -238,6 +251,7 @@ async def generate_product_card(
         tone=tone,
         length=length,
         language=language,
+        category=category,
     )
 
     # Cache lookup
@@ -248,6 +262,7 @@ async def generate_product_card(
         tone=tone,
         length=length,
         language=language,
+        category=category,
     )
     now = asyncio.get_event_loop().time()
     hit = _CACHE.get(key)

@@ -135,3 +135,43 @@ async def prune_history(db_path: str, *, tg_id: int, keep: int) -> None:
         )
         await db.commit()
 
+
+async def stats_overview(db_path: str) -> Dict[str, Any]:
+    """Return simple aggregated stats for admin usage.
+
+    - total_generations: total rows in table
+    - users: count of distinct tg_id
+    - last_generated_at: most recent created_at (or None)
+    """
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            """
+            SELECT COUNT(*) AS total_generations,
+                   COUNT(DISTINCT tg_id) AS users,
+                   MAX(created_at) AS last_generated_at
+            FROM generations
+            """
+        )
+        row = await cur.fetchone()
+        await cur.close()
+        return dict(row or {})
+
+
+async def per_user_counts(db_path: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Return top users by generation count (limited)."""
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            """
+            SELECT tg_id, COUNT(*) AS cnt, MIN(created_at) AS first_at, MAX(created_at) AS last_at
+            FROM generations
+            GROUP BY tg_id
+            ORDER BY cnt DESC, last_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        rows = await cur.fetchall()
+        await cur.close()
+        return [dict(r) for r in rows]

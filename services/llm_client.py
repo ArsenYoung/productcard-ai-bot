@@ -110,3 +110,20 @@ class OllamaClient:
                     if chunk:
                         yield chunk
                     # The final object has done=true; nothing to yield on that frame
+
+    async def health_check(self, timeout: float = 5.0) -> bool:
+        """Lightweight readiness check: query tags endpoint.
+
+        Returns True if HTTP 200 and JSON parse succeeds, else False.
+        """
+        url = f"{self.base_url}/api/tags"
+        timeout_cfg = aiohttp.ClientTimeout(total=timeout)
+        try:
+            async with aiohttp.ClientSession(timeout=timeout_cfg) as session:
+                async with session.get(url) as resp:
+                    if resp.status >= 400:
+                        return False
+                    await resp.json()
+                    return True
+        except Exception:
+            return False

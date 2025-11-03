@@ -14,6 +14,7 @@ async def _run(
     tone: str,
     audience: Optional[str],
     language: str,
+    category: Optional[str],
 ):
     payload = await generate_product_card(
         product_name=name,
@@ -22,6 +23,7 @@ async def _run(
         tone=tone,
         audience=audience,
         language=language,
+        category=category,
     )
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
@@ -40,6 +42,7 @@ def main():
     p.add_argument("--tone", default="neutral", help="Writing tone (default: neutral)")
     p.add_argument("--audience", help="Target audience")
     p.add_argument("--lang", default="ru", choices=["ru", "en"], help="Output language: ru or en (default: ru)")
+    p.add_argument("--category", help="Optional category preset (e.g., electronics, apparel, home, beauty, sports)")
 
     args = p.parse_args()
     asyncio.run(
@@ -50,6 +53,7 @@ def main():
             tone=args.tone,
             audience=args.audience,
             language=args.lang,
+            category=args.category,
         )
     )
 

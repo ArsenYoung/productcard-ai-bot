@@ -2,4 +2,8 @@
 .env
 __pycache__/
 *.pyc
-
+.venv/
+data/
+logs/
+.datasette.pid
+.DS_Store

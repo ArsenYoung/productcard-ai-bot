@@ -1,6 +1,7 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from typing import Optional
 from .i18n import t
+from app.presets import list_presets
 
 
 def platforms_keyboard(lang: Optional[str] = None) -> InlineKeyboardMarkup:
@@ -75,4 +76,18 @@ def actions_after_cancel_keyboard(lang: Optional[str] = None) -> InlineKeyboardM
             InlineKeyboardButton(text=t(lang, "btn_edit_previous"), callback_data="edit:last"),
         ]
     ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def category_keyboard(lang: Optional[str] = None) -> InlineKeyboardMarkup:
+    # Static order for readability
+    mapping = {
+        "electronics": t(lang, "btn_cat_electronics"),
+        "apparel": t(lang, "btn_cat_apparel"),
+        "home": t(lang, "btn_cat_home"),
+        "beauty": t(lang, "btn_cat_beauty"),
+        "sports": t(lang, "btn_cat_sports"),
+    }
+    buttons = [[InlineKeyboardButton(text=label, callback_data=f"cat:{code}")] for code, label in mapping.items()]
+    buttons.append([InlineKeyboardButton(text=t(lang, "btn_cat_reset"), callback_data="cat:")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
