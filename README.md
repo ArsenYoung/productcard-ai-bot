@@ -26,16 +26,6 @@
 }
 ```
 
-## 🖼️ Скриншоты
-![CLI](docs/screenshots/01-cli.svg)
-CLI: генерация и JSON-вывод.
-
-![Telegram bot](docs/screenshots/02-telegram.svg)
-Telegram: диалог с прогрессом и отменой.
-
-![Architecture](docs/screenshots/03-architecture.svg)
-Архитектура и поток данных.
-
 ## 🚀 Quick start (3–5 минут)
 ### Вариант A — Telegram-бот локально
 1. Создайте `.env`:
