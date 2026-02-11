@@ -1,3 +1,5 @@
+import logging
+
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery
@@ -25,6 +27,7 @@ from app.config import get_settings
 
 
 router = Router()
+logger = logging.getLogger("productcard")
 
 # In-memory map of running tasks: tg_id -> {"task": Task, "wait_msg": Message, "lang": str}
 _running = {}
@@ -371,6 +374,7 @@ async def on_input(message: Message, state: FSMContext):
         return
     except Exception as e:
         # Give a more helpful hint on LLM connectivity issues
+        logger.exception("Generation failed for user %s: %s", message.from_user.id, e)
         err = str(e)
         if "Cannot connect to host" in err or "Connect call failed" in err:
             cfg = get_settings()

@@ -1,9 +1,14 @@
 import argparse
 import asyncio
 import json
+import logging
+import sys
 from typing import Optional
 
 from services.generation_service import generate_product_card
+
+
+logger = logging.getLogger("productcard.cli")
 
 
 async def _run(
@@ -29,6 +34,10 @@ async def _run(
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
     p = argparse.ArgumentParser(
         description="Generate a product card JSON using a local Ollama model (phi3:mini by default).",
     )
@@ -45,17 +54,22 @@ def main():
     p.add_argument("--category", help="Optional category preset (e.g., electronics, apparel, home, beauty, sports)")
 
     args = p.parse_args()
-    asyncio.run(
-        _run(
-            name=args.name,
-            features=args.features,
-            platform=args.platform,
-            tone=args.tone,
-            audience=args.audience,
-            language=args.lang,
-            category=args.category,
+    try:
+        asyncio.run(
+            _run(
+                name=args.name,
+                features=args.features,
+                platform=args.platform,
+                tone=args.tone,
+                audience=args.audience,
+                language=args.lang,
+                category=args.category,
+            )
         )
-    )
+    except Exception as exc:
+        logger.exception("Generation failed")
+        print(f"Generation failed: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

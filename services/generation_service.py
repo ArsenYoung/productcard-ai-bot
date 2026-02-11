@@ -1,35 +1,36 @@
+import asyncio
 import json
 import logging
 import re
-import asyncio
-from typing import Any, Dict, Optional, Tuple, Callable, Awaitable
+from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
 from app.config import get_settings
-from app.platforms import get_profile, LENGTH_HINTS, TONE_LABELS
+from app.platforms import LENGTH_HINTS, TONE_LABELS, get_profile
 from app.presets import get_preset
+from app.prompts import load_prompt
 from .llm_client import OllamaClient
 
 
-SYSTEM_PROMPT_EN = (
+DEFAULT_SYSTEM_PROMPT_EN = (
     "You are an assistant that writes concise, compelling e-commerce product cards. "
     "Always return strict, valid JSON with keys: title, short_description, bullets (array of strings). "
     "No markdown, no code fences, no extra text besides JSON."
 )
 
-SYSTEM_PROMPT_RU = (
+DEFAULT_SYSTEM_PROMPT_RU = (
     "Ты ассистент, который пишет краткие и убедительные карточки товара для маркетплейсов. "
     "Пиши ТОЛЬКО на русском языке. "
     "Возвращай СТРОГО валидный JSON со свойствами: title, short_description, bullets (массив строк). "
     "Без markdown и без тройных кавычек/код‑блоков. Никакого лишнего текста, только JSON."
 )
 
-REPAIR_SYSTEM_PROMPT_EN = (
+DEFAULT_REPAIR_SYSTEM_PROMPT_EN = (
     "You fix and normalize outputs to strict JSON only. "
     "Return only valid JSON with keys: title, short_description, bullets (array of strings). "
     "No commentary, no markdown."
 )
 
-REPAIR_SYSTEM_PROMPT_RU = (
+DEFAULT_REPAIR_SYSTEM_PROMPT_RU = (
     "Преобразуй текст в СТРОГИЙ JSON. "
     "Верни только валидный JSON со свойствами: title, short_description, bullets (массив строк). "
     "Никаких комментариев, markdown или лишнего текста."
@@ -40,6 +41,22 @@ logger = logging.getLogger("productcard")
 # Simple in-memory cache with TTL
 _CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 _CACHE_ORDER: list[str] = []
+
+
+def _system_prompt(language: str) -> str:
+    if language == "ru":
+        return load_prompt("product_card", language="ru", default=DEFAULT_SYSTEM_PROMPT_RU)
+    return load_prompt("product_card", language="en", default=DEFAULT_SYSTEM_PROMPT_EN)
+
+
+def _repair_system_prompt(language: str) -> str:
+    if language == "ru":
+        return load_prompt(
+            "product_card_repair", language="ru", default=DEFAULT_REPAIR_SYSTEM_PROMPT_RU
+        )
+    return load_prompt(
+        "product_card_repair", language="en", default=DEFAULT_REPAIR_SYSTEM_PROMPT_EN
+    )
 
 def _cache_key(**kwargs: Any) -> str:
     # Normalize values and build a stable key
@@ -276,7 +293,7 @@ async def generate_product_card(
         while True:
             attempt += 1
             # Choose system prompt per target language
-            sys_prompt = SYSTEM_PROMPT_RU if language == "ru" else SYSTEM_PROMPT_EN
+            sys_prompt = _system_prompt(language)
             if progress_cb:
                 # Stream with approximate progress towards 95%
                 profile = get_profile(platform)
@@ -339,7 +356,7 @@ async def generate_product_card(
                 )
             ) + last_raw
             await asyncio.sleep(cfg.gen_retry_delay_sec)
-            rep_sys = REPAIR_SYSTEM_PROMPT_RU if language == "ru" else REPAIR_SYSTEM_PROMPT_EN
+            rep_sys = _repair_system_prompt(language)
             if progress_cb:
                 # Repair without streaming; jump progress near completion
                 try:

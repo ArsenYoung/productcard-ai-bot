@@ -1,71 +1,62 @@
-# Дорожная карта версий
+# Version roadmap
 
-Этот документ описывает план версий и критерии «готово». Придерживаемся SemVer (MAJOR.MINOR.PATCH).
+This document outlines planned versions and "done" criteria. We follow SemVer (MAJOR.MINOR.PATCH).
 
-- MAJOR — несовместимые изменения (схема БД, формат API/JSON, протокол команд).
-- MINOR — обратносovместимые фичи и улучшения.
-- PATCH — исправления, стабильность, документация.
+- MAJOR - incompatible changes (DB schema, API/JSON format, command protocol).
+- MINOR - backward-compatible features and improvements.
+- PATCH - fixes, stability, documentation.
 
-Текущий статус проекта: v1.2: добавлены пресеты категорий и админ‑команды (лимиты/логи/статистика/бэкапы/health‑check); сохранена совместимость форматов/БД.
+Current project status: v1.2. Added category presets and admin commands (limits/logs/stats/backups/health-check) while keeping format/DB compatibility.
 
-## 0.x — Пре-релизы (внутренние этапы)
-- 0.1 — Локальный генератор и CLI — ГОТОВО
-  - Ollama, модель по умолчанию `phi3:mini`, JSON‑выход, базовый промпт.
-  - Минимальный HTTP‑клиент, сервис генерации, CLI‑демо.
-- 0.2 — Телеграм‑скелет — ГОТОВО
-  - aiogram 3.x, команды /start, простой сценарий: платформа → ввод данных → единичная генерация.
-  - Без БД, без экспорта в файлы.
-- 0.3 — Хранилище и экспорт — ГОТОВО
-  - SQLite: хранение последних N генераций на пользователя.
-  - Экспорт .txt и .csv в чат.
-- 0.4 — Платформы и пресеты — ГОТОВО
-  - Профили Ozon/WB/Etsy/Shopify: лимиты, поля, подсказки.
-  - Настройки стиль/длина, базовая валидация длин и полей.
-- 0.5 — Надёжность и конфигурирование — ТЕКУЩАЯ
-  - Стабильный JSON‑парсинг (повторные попытки/коррекция), таймауты/ретраи.
-  - .env конфигурация, логирование, базовые метрики.
-- 0.3 — Хранилище и экспорт
-  - SQLite: хранение последних N генераций на пользователя.
-  - Экспорт .txt и .csv в чат.
-- 0.4 — Платформы и пресеты
-  - Профили Ozon/WB/Etsy/Shopify: лимиты, поля, подсказки.
-  - Настройки стиль/длина, базовая валидация длин и полей.
-- 0.5 — Надёжность и конфигурирование
-  - Стабильный JSON‑парсинг (повторные попытки/коррекция), таймауты/ретраи.
-  - .env конфигурация, логирование, базовые метрики.
+## 0.x - Pre-releases (internal milestones)
+- 0.1 - Local generator and CLI - DONE  
+  - Ollama, default model `phi3:mini`, JSON output, base prompt.  
+  - Minimal HTTP client, generation service, CLI demo.
+- 0.2 - Telegram skeleton - DONE  
+  - aiogram 3.x, /start, simple flow: platform → data input → single generation.  
+  - No DB, no file export.
+- 0.3 - Storage and export - DONE  
+  - SQLite: store last N generations per user.  
+  - Export .txt and .csv to chat.
+- 0.4 - Platforms and presets - DONE  
+  - Ozon/WB/Etsy/Shopify profiles: limits, fields, hints.  
+  - Style/length settings, basic validation of lengths and fields.
+- 0.5 - Reliability and configuration - CURRENT  
+  - Stable JSON parsing (retries/repair), timeouts/retries.  
+  - .env configuration, logging, basic metrics.
 
-## 1.x — MVP и улучшения
-- 1.0 — MVP (Ollama)
-  - Полный поток в Telegram с FSM: платформа → стиль/длина → ввод данных → генерация → экспорт/повтор.
-  - Локальная модель через Ollama (`phi3:mini`), настройки через .env.
-  - Экспорт .txt/.csv, хранение последних N генераций в SQLite.
-  - Логи и инструкция по развёртыванию.
-- 1.1 — Качество
-  - По возможности стриминг ответов, индикаторы прогресса.
-  - Тюнинг промптов по платформам, устойчивый JSON (self‑healing перегенерации).
-  - Троттлинг/очередь задач, отмена запроса, кэш входов.
-- 1.2 — UX и поддержка
-  - Шаблоны/пресеты категорий, локализация RU/EN.
-  - Админ‑команды: лимиты, просмотр логов, выгрузка статистики.
-  - Бэкапы SQLite, ротация логов, health‑check.
+## 1.x - MVP and improvements
+- 1.0 - MVP (Ollama)  
+  - Full Telegram flow with FSM: platform → style/length → data input → generation → export/retry.  
+  - Local model via Ollama (`phi3:mini`), settings via .env.  
+  - Export .txt/.csv, store last N generations in SQLite.  
+  - Logs and deployment guide.
+- 1.1 - Quality  
+  - Streaming responses where possible, progress indicators.  
+  - Prompt tuning per platform, resilient JSON (self-healing regeneration).  
+  - Throttling/task queue, cancel request, input cache.
+- 1.2 - UX and support  
+  - Category templates/presets, RU/EN localization.  
+  - Admin commands: limits, log view, stats export.  
+  - SQLite backups, log rotation, health-check.
 
-## 2.0 — Расширяемость провайдеров
-- Абстракция LLM‑провайдеров: Ollama по умолчанию + опция Transformers/OpenAI‑совместимые.
-- Переключение моделей в рантайме, шаблоны под платформы/модели.
-- При росте нагрузки — вынос генерации в отдельный HTTP‑сервис с очередью.
+## 2.0 - Provider extensibility
+- LLM provider abstraction: Ollama by default + option for Transformers/OpenAI-compatible backends.
+- Runtime model switching, platform/model templates.
+- If load grows: move generation to a separate HTTP service with a queue.
 
-## 3.0 — Продвинутые возможности
-- Мультимодальность: извлечение характеристик из фото (Qwen‑VL/LLaVA) и авто‑черновик.
-- Массовая генерация по CSV/Google Sheets, прогресс задач, отчёты.
-- Персонализация: сохранённые тоны/шаблоны/лексикон бренда.
+## 3.0 - Advanced capabilities
+- Multimodality: extract features from photos (Qwen-VL/LLaVA) and auto-drafts.
+- Bulk generation via CSV/Google Sheets, job progress, reports.
+- Personalization: saved tones/templates/brand lexicon.
 
-## Критерии «Готово»
-- 1.0: стабильный поток в Telegram, экспорт, SQLite, работа на CPU‑only с квантованной моделью, документация по запуску.
-- 1.1: улучшенный UX/скорость, без регрессий по БД/формату.
-- 2.0: добавлены провайдеры без поломки сценариев; миграции задокументированы.
+## Definition of Done
+- 1.0: stable Telegram flow, export, SQLite, works on CPU-only with a quantized model, deployment docs.  
+- 1.1: better UX/speed, no regressions in DB/format.  
+- 2.0: extra providers without breaking flows; migrations documented.
 
-## Процесс релизов
-- Семантические теги Git: `vX.Y.Z`.
-- CHANGELOG с краткими пунктами (Added/Changed/Fixed/Docs).
-- При изменениях БД/формата — миграции и инструкция в `docs/migrations/` или в релиз‑нотах.
-- Вопросы/идеи — заводить задачи/тикеты по версиям.
+## Release process
+- Semantic Git tags: `vX.Y.Z`.
+- CHANGELOG with concise bullets (Added/Changed/Fixed/Docs).
+- For DB/format changes - migrations and instructions in `docs/migrations/` or release notes.
+- Questions/ideas - raise tickets/issues per version.

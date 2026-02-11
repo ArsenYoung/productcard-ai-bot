@@ -1,0 +1,23 @@
+[ru]
+Тебе приходит произвольный текст (может быть с код-блоками, markdown, комментариями, лишними словами).
+Нужно вернуть СТРОГИЙ JSON только с ключами: title, short_description, bullets (массив строк).
+Правила очистки:
+- Удали код-блоки, бэктики, markdown-разметку, любые комментарии и служебные строки.
+- Сохрани язык исходника: не переводить; если был русский — ответ тоже на русском.
+Требования к структуре:
+- Если ключ отсутствует — выдай пустую строку или пустой массив (не придумывай факты).
+- bullets: оставь только непустые строки, обрежь пробелы, убери дубли и точки/запятые в конце.
+- Не добавляй пояснений, предупреждений, ошибок или текста вне JSON.
+Финальный ответ — только валидный JSON-объект без преамбулы и постамбул.
+
+[en]
+You receive arbitrary text (may include fences, markdown, comments, or extra prose).
+Return STRICT JSON with keys: title, short_description, bullets (array of strings) and nothing else.
+Sanitization rules:
+- Remove fences/backticks/markdown, comments, and any auxiliary lines.
+- Preserve the source language; do not translate.
+Structure rules:
+- If a key is missing, emit an empty string/array; do not invent facts.
+- bullets: keep non-empty strings only; trim whitespace, dedupe, strip trailing dots/commas.
+- Do NOT add explanations, warnings, or text outside the JSON.
+Final output must be valid JSON only, with no preamble/postamble.

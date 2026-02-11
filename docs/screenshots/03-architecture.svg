@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" fill="none">
+  <defs>
+    <linearGradient id="bg3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B1226"/>
+      <stop offset="1" stop-color="#0F1F3C"/>
+    </linearGradient>
+    <style>
+      .box { fill: #0F1F3C; stroke: #3A64A8; stroke-width: 1.6; rx: 16px; }
+      .title { fill: #EAF1FF; font-size: 20px; font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; }
+      .text { fill: #9EB6E2; font-size: 16px; font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; }
+      .arrow { stroke: #4DB68C; stroke-width: 3; marker-end: url(#arrowhead); }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#4DB68C" />
+    </marker>
+  </defs>
+  <rect width="1200" height="675" rx="18" fill="url(#bg3)"/>
+  <text x="60" y="70" class="title">ProductCard AI · high-level flow</text>
+
+  <rect x="80" y="140" width="260" height="120" class="box"/>
+  <text x="110" y="180" class="title">Clients</text>
+  <text x="110" y="210" class="text">Telegram bot (aiogram)</text>
+  <text x="110" y="235" class="text">CLI (async)</text>
+
+  <rect x="420" y="120" width="320" height="160" class="box"/>
+  <text x="450" y="160" class="title">Application layer</text>
+  <text x="450" y="190" class="text">Handlers · FSM · keyboards</text>
+  <text x="450" y="215" class="text">Prompt builder · presets</text>
+  <text x="450" y="240" class="text">Resilient JSON parsing</text>
+
+  <rect x="820" y="120" width="300" height="160" class="box"/>
+  <text x="850" y="160" class="title">LLM</text>
+  <text x="850" y="190" class="text">Ollama HTTP (phi3:mini)</text>
+  <text x="850" y="215" class="text">System prompts from prompts/</text>
+  <text x="850" y="240" class="text">Retry + repair passes</text>
+
+  <rect x="420" y="340" width="320" height="160" class="box"/>
+  <text x="450" y="380" class="title">Persistence</text>
+  <text x="450" y="410" class="text">SQLite (aiosqlite)</text>
+  <text x="450" y="435" class="text">History, exports, backups</text>
+
+  <rect x="80" y="360" width="260" height="140" class="box"/>
+  <text x="110" y="400" class="title">Monitoring</text>
+  <text x="110" y="430" class="text">Health, limits, stats</text>
+  <text x="110" y="455" class="text">Rotating logs</text>
+
+  <line x1="340" y1="200" x2="420" y2="200" class="arrow"/>
+  <line x1="740" y1="200" x2="820" y2="200" class="arrow"/>
+  <line x1="580" y1="280" x2="580" y2="340" class="arrow"/>
+  <line x1="340" y1="430" x2="420" y2="430" class="arrow"/>
+  <line x1="420" y1="410" x2="340" y2="410" class="arrow"/>
+</svg>

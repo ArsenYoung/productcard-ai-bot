@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" fill="none">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0E1729"/>
+      <stop offset="1" stop-color="#1F3153"/>
+    </linearGradient>
+    <style>
+      .frame { fill: #0F1A2F; stroke: #22395F; stroke-width: 1.5; }
+      .header { fill: #0D1527; }
+      .htext { fill: #EAF1FF; font-size: 18px; font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; }
+      .bubble-left { fill: #1D2B4A; stroke: #2E4675; stroke-width: 1.2; }
+      .bubble-right { fill: #0F966D; stroke: #35B88B; stroke-width: 1.2; }
+      .text { fill: #EAF1FF; font-size: 17px; font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; }
+      .label { fill: #8FA9D6; font-size: 15px; font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; }
+      .input { fill: #112543; stroke: #29406A; stroke-width: 1.2; }
+    </style>
+  </defs>
+  <rect width="1200" height="675" rx="18" fill="url(#bg2)"/>
+  <rect x="60" y="60" width="1080" height="555" rx="18" class="frame"/>
+  <rect x="60" y="60" width="1080" height="66" rx="18" class="header"/>
+  <text x="80" y="99" class="htext">ProductCard Bot</text>
+  <text x="1000" y="99" class="label">online</text>
+
+  <rect x="90" y="150" width="480" height="110" rx="14" class="bubble-left"/>
+  <text x="110" y="190" class="text">Choose language</text>
+  <text x="110" y="220" class="label">EN · RU</text>
+
+  <rect x="630" y="180" width="480" height="90" rx="14" class="bubble-right"/>
+  <text x="650" y="220" class="text">Platform: Amazon · Tone: selling · Length: medium</text>
+
+  <rect x="90" y="280" width="480" height="120" rx="14" class="bubble-left"/>
+  <text x="110" y="320" class="text">Input: "Leakproof steel bottle 750 ml"</text>
+  <text x="110" y="350" class="text">Features: double walls, no drips, keeps cold</text>
+
+  <rect x="630" y="310" width="480" height="90" rx="14" class="bubble-right"/>
+  <text x="650" y="350" class="text">Generating… 68%   |   Cancel</text>
+
+  <rect x="90" y="420" width="1020" height="150" rx="14" class="bubble-left"/>
+  <text x="110" y="460" class="text">Title: Steel bottle 750 ml with leakproof lid</text>
+  <text x="110" y="490" class="text">Description: Double walls hold cold for 18 hours; valve prevents drips; bottle does not keep odors.</text>
+  <text x="110" y="520" class="text">Bullets: • Leakproof lid • 750 ml volume • Keeps cold up to 18h</text>
+  <text x="110" y="548" class="label">Export: TXT | CSV | JSON · /backup · /logs · /stats</text>
+
+  <rect x="90" y="555" width="1020" height="40" rx="16" class="input"/>
+  <text x="110" y="583" class="label">Message ProductCard Bot…</text>
+  <circle cx="1070" cy="575" r="12" fill="#39B87F"/>
+  <polygon points="1066,575 1074,570 1074,580" fill="#0F1A2F"/>
+</svg>

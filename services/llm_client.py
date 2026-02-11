@@ -1,6 +1,10 @@
-from typing import Any, Dict, Optional, Sequence, Union, AsyncIterator
+import logging
+from typing import Any, AsyncIterator, Dict, Optional, Sequence, Union
 
 import aiohttp
+
+
+logger = logging.getLogger("productcard")
 
 
 class OllamaClient:
@@ -42,12 +46,17 @@ class OllamaClient:
         url = f"{self.base_url}/api/generate"
         timeout_cfg = aiohttp.ClientTimeout(total=timeout)
         async with aiohttp.ClientSession(timeout=timeout_cfg) as session:
-            async with session.post(url, json=body) as resp:
-                if resp.status >= 400:
-                    text = await resp.text()
-                    raise RuntimeError(f"Ollama HTTP {resp.status}: {text}")
-                data = await resp.json()
-                return data.get("response", "")
+            try:
+                async with session.post(url, json=body) as resp:
+                    if resp.status >= 400:
+                        text = await resp.text()
+                        logger.error("Ollama error %s: %s", resp.status, text)
+                        raise RuntimeError(f"Ollama HTTP {resp.status}: {text}")
+                    data = await resp.json()
+                    return data.get("response", "")
+            except aiohttp.ClientError as e:
+                logger.error("Ollama request failed: %s", e)
+                raise
 
     async def generate_stream(
         self,
@@ -87,29 +96,34 @@ class OllamaClient:
         url = f"{self.base_url}/api/generate"
         timeout_cfg = aiohttp.ClientTimeout(total=timeout)
         async with aiohttp.ClientSession(timeout=timeout_cfg) as session:
-            async with session.post(url, json=body) as resp:
-                if resp.status >= 400:
-                    text = await resp.text()
-                    raise RuntimeError(f"Ollama HTTP {resp.status}: {text}")
-                import json as _json
-                while True:
-                    line_bytes = await resp.content.readline()
-                    if not line_bytes:
-                        break
-                    try:
-                        line = line_bytes.decode("utf-8").strip()
-                    except Exception:
-                        continue
-                    if not line:
-                        continue
-                    try:
-                        obj = _json.loads(line)
-                    except Exception:
-                        continue
-                    chunk = obj.get("response") or ""
-                    if chunk:
-                        yield chunk
-                    # The final object has done=true; nothing to yield on that frame
+            try:
+                async with session.post(url, json=body) as resp:
+                    if resp.status >= 400:
+                        text = await resp.text()
+                        logger.error("Ollama stream error %s: %s", resp.status, text)
+                        raise RuntimeError(f"Ollama HTTP {resp.status}: {text}")
+                    import json as _json
+                    while True:
+                        line_bytes = await resp.content.readline()
+                        if not line_bytes:
+                            break
+                        try:
+                            line = line_bytes.decode("utf-8").strip()
+                        except Exception:
+                            continue
+                        if not line:
+                            continue
+                        try:
+                            obj = _json.loads(line)
+                        except Exception:
+                            continue
+                        chunk = obj.get("response") or ""
+                        if chunk:
+                            yield chunk
+                        # The final object has done=true; nothing to yield on that frame
+            except aiohttp.ClientError as e:
+                logger.error("Ollama streaming request failed: %s", e)
+                raise
 
     async def health_check(self, timeout: float = 5.0) -> bool:
         """Lightweight readiness check: query tags endpoint.
